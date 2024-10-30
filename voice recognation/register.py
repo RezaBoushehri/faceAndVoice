@@ -154,5 +154,5 @@ def register_new_user(username):
 
 if __name__ == "__main__":
     # Example usage
-    register_new_user("mr.jafari")
+    register_new_user("mr.mrX")
     # recognize_speaker()

@@ -54,7 +54,7 @@ class SpeakerRecognition:
     def extract_mfcc(self, audio_data):
         """Extracts MFCC features from audio data."""
         sr = 44100  # Sample rate for librosa
-        mfcc = librosa.feature.mfcc(y=audio_data.astype(np.float32), sr=sr, n_mfcc=20)
+        mfcc = librosa.feature.mfcc(y=audio_data.astype(np.float32), sr=sr, n_mfcc=40)
         return mfcc.T
 
     def predict(self, audio_data):
@@ -71,7 +71,7 @@ class SpeakerRecognition:
         if scores:
             recognized_user = min(scores, key=scores.get)
             logging.info(f"Scores: {scores}")
-            return recognized_user if scores[recognized_user] < 40 else "Unknown"
+            return recognized_user if scores[recognized_user] < 20 else "Unknown"
         return "Unknown"  # No users in the model
 
 def record_voice(duration=5):

@@ -12,13 +12,17 @@ import time
 import dlib  # Make sure to install dlib
 from scipy.spatial import distance  # For EAR calculation
 
+# Define your desired frame dimensions
+FRAME_WIDTH = 1080
+FRAME_HEIGHT = 1080
+
 # Initialize HOG descriptor for human detection
 hog = cv2.HOGDescriptor()
 hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
 # Load dlib's face detector and the facial landmark predictor
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Make sure to have this file
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
 
 # MongoDB connection
 client = pymongo.MongoClient('mongodb://172.16.28.91:27017/')
@@ -56,6 +60,8 @@ class VideoCamera:
         while self.running:
             success, frame = self.vid.read()
             if success:
+                # Resize the frame
+                frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
                 self.frame = frame
             time.sleep(0.03)  # Adjust sleep to reduce CPU usage
 
@@ -72,7 +78,7 @@ class FaceRecognitionApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Face Recognition")
-        self.canvas = tk.Canvas(root, width=640, height=480)
+        self.canvas = tk.Canvas(root, width=FRAME_WIDTH, height=FRAME_HEIGHT)
         self.canvas.pack()
         
         self.detecting = False
@@ -83,15 +89,14 @@ class FaceRecognitionApp:
         frame = camera.get_frame()
         if frame is not None and not self.face_detected:
             # Reduce frame resolution to 640x480 for lower resource usage
-            small_frame = cv2.resize(frame, (640, 480))
-            rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # Detect only if human is detected and face not logged recently
             if self.detect_human(rgb_frame):
                 self.capture_and_detect(rgb_frame)
 
             # Show frame on the canvas
-            display_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+            display_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(display_frame)
             imgtk = ImageTk.PhotoImage(image=img)
             self.canvas.create_image(0, 0, anchor='nw', image=imgtk)
@@ -123,11 +128,10 @@ class FaceRecognitionApp:
                     detected_faces.add(name)
                 else:
                     detected_faces.add('Unknown')
+
             # Draw rectangles and labels
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-
-       
 
         # ** Capture frames for movement analysis if a human is detected **
         frames = []
@@ -135,31 +139,22 @@ class FaceRecognitionApp:
             captured_frame = camera.get_frame()
             if captured_frame is not None:
                 frames.append(captured_frame.copy())  # Use copy to preserve the frame
-                time.sleep(0.03)  # Wait for 0.1 seconds between captures
+                time.sleep(0.03)  # Wait for 0.03 seconds between captures
+
         # Log detected faces
         for name in detected_faces:
-            # self.log_alive_status(alive)
-
-            # self.log_face(name)
-            # Analyze captured frames for liveliness
             alive = self.analyze_frames(frames)
-            # if alive :
-            self.log_alive_status(alive,name)
-            
-
+            self.log_alive_status(alive, name)
 
     def log_face(self, name):
         log_data = {"name": name, "time": datetime.now()}
-        # db['log'].insert_one(log_data)
         print(f"Logged {name} at {log_data['time']}")
 
-    def log_alive_status(self, alive,name):
-        # Log the status in MongoDB
+    def log_alive_status(self, alive, name):
         log_data = {
             "alive": alive,
             "timestamp": datetime.now()
         }
-        # db['alive_status_log'].insert_one(log_data)
         status = "alive" if alive else "not alive"
         print(f"Logged: {name} is {status} at {log_data['timestamp']}")
 
@@ -187,7 +182,6 @@ class FaceRecognitionApp:
             non_zero_count = np.sum(thresh)
             if non_zero_count > 10000:  # Threshold can be adjusted
                 motion_detected = True
-                # print(f"Motion detected between frames {i-1} and {i}: {non_zero_count} pixels changed.")
 
             previous_frame = current_frame  # Update previous frame for the next iteration
 
@@ -195,7 +189,6 @@ class FaceRecognitionApp:
             faces = detector(current_frame)
 
             if faces:
-                # print(f"Detected {len(faces)} face(s) in frame {i}.")
                 shape = predictor(current_frame, faces[0])
                 landmarks = np.array([[p.x, p.y] for p in shape.parts()])
 
@@ -207,9 +200,6 @@ class FaceRecognitionApp:
                 left_ear = self.eye_aspect_ratio(left_eye)
                 right_ear = self.eye_aspect_ratio(right_eye)
 
-                # print(f"Left EAR: {left_ear}, Right EAR: {right_ear}")
-
-                # Check if either eye is open (i.e., EAR below threshold)
                 if left_ear < 0.25:  # Threshold can be adjusted
                     left_blinking = True
                     blink_frames += 1  # Count frames where the left eye is detected as blinking
@@ -218,14 +208,11 @@ class FaceRecognitionApp:
                     right_blinking = True
                     blink_frames += 1  # Count frames where the right eye is detected as blinking
 
-                # If both eyes have been detected as blinking for a number of consecutive frames, we count it as a blink
                 if blink_frames >= 1:  # This could be adjusted
                     blink_count += 1
-                    # print(f"Blink detected in frame {i}. Blink count: {blink_count}")
                     left_blinking = False  # Reset after counting
                     right_blinking = False
 
-                # Reset the blink frame counter if neither eye is blinking
                 if left_ear >= 0.25 and right_ear >= 0.25:
                     blink_frames = 0
 
@@ -233,7 +220,6 @@ class FaceRecognitionApp:
         if blink_count > 0 and motion_detected:
             alive = True
 
-        # print(f"Final assessment: {'Alive' if alive else 'Not alive'} (Blinks: {blink_count}, Motion: {motion_detected})")
         return alive
 
     def eye_aspect_ratio(self, eye):

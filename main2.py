@@ -11,6 +11,7 @@ from datetime import datetime
 import time
 import dlib  # Make sure to install dlib
 from scipy.spatial import distance  # For EAR calculation
+from voice_recognation.recognize_speakerTorch import recognize_speaker
 
 # Define your desired frame dimensions
 FRAME_WIDTH = 1080
@@ -49,7 +50,8 @@ def load_known_faces():
 known_faces, known_names = load_known_faces()
 
 class VideoCamera:
-    def __init__(self, source="rtsp://admin:farahoosh@3207@172.16.28.6"):
+    # def __init__(self, source="rtsp://admin:farahoosh@3207@172.16.28.6"):
+    def __init__(self, source=0):
         self.vid = cv2.VideoCapture(source)
         self.frame = None
         self.running = True
@@ -143,8 +145,9 @@ class FaceRecognitionApp:
 
         # Log detected faces
         for name in detected_faces:
-            alive = self.analyze_frames(frames)
-            self.log_alive_status(alive, name)
+            if recognize_speaker() == name :
+                alive = self.analyze_frames(frames)
+                self.log_alive_status(alive, name)
 
     def log_face(self, name):
         log_data = {"name": name, "time": datetime.now()}

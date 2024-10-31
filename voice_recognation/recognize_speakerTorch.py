@@ -106,7 +106,7 @@ class SpeakerRecognitionSystem:
         recognized_distance = nearest_neighbors[0][0]  # Get the distance of the most common user
 
         # Define a threshold for acceptance (adjust this based on your model's performance)
-        threshold = 0.2  # Adjust this based on your model's performance
+        threshold = 0.4  # Adjust this based on your model's performance
         if recognized_distance < threshold:  # Ensure we're comparing a float distance
             return recognized_user
         
@@ -142,7 +142,8 @@ def recognize_speaker():
 
         # Predict the speaker
         recognized_user = recognizer.predict(recorded_audio_array)
-        logging.info(f'Recognized User: {recognized_user}')
+        # logging.info(f'Recognized User: {recognized_user}')
+        return recognized_user
     except Exception as e:
         logging.error(f"Error in speaker recognition: {e}")
 

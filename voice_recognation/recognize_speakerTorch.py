@@ -12,43 +12,52 @@ from collections import Counter
 logging.basicConfig(level=logging.INFO)
 
 class SpeakerRecognitionSystem:
-    def __init__(self, db):
-        self.models = {}
-        self.db = db
-        self.model = self.load_model()  # Load model once during initialization
+    model = None  # Class attribute to store the model for all instances
 
+    def __init__(self, db):
+        self.db = db
+        self.models = {}  # Initialize the dictionary to store user embeddings
+        self.audio_cache = {}  # Cache to store processed audio for each user
+        if SpeakerRecognitionSystem.model is None:
+            SpeakerRecognitionSystem.model = self.load_model()  # Load model only once
+        
     def load_model(self):
-        """Loads the pre-trained SpeakerRecognition model from SpeechBrain."""
+        """Loads the pre-trained SpeakerRecognition model from SpeechBrain if not already loaded."""
         logging.info("Loading pre-trained speaker recognition model...")
         try:
-            # Load the model with specific parameters
             model = SpeakerRecognition.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir="tmpdir_asv")
             logging.info("Model loaded successfully.")
             return model
         except Exception as e:
             logging.error(f"Error loading model: {e}")
             raise
-
     def process_audio_base64(self, audio_base64, username):
-        """Decodes Base64 audio and converts it to a NumPy array."""
+        """Decodes Base64 audio and converts it to a NumPy array, only if not already processed."""
+        if username in self.audio_cache:
+            logging.info(f"Using cached audio data for user: {username}")
+            return self.audio_cache[username]
+
         try:
             # Decode Base64 to bytes
             audio_binary = base64.b64decode(audio_base64)
             logging.info(f'User: {username}, Audio binary size: {len(audio_binary)} bytes')
 
             # Convert binary audio to a 1D NumPy array
-            return np.frombuffer(audio_binary, dtype=np.int16)
+            audio_data = np.frombuffer(audio_binary, dtype=np.int16)
+
+            # Cache the audio data for future use
+            self.audio_cache[username] = audio_data
+            return audio_data
         except Exception as e:
             logging.error(f"Error decoding audio for {username}: {e}")
             # Save for debugging if decoding fails
             with open(f"error_{username}.wav", "wb") as f:
                 f.write(base64.b64decode(audio_base64))  # Save the original Base64 audio
             return None
-
     def extract_embedding(self, audio_data):
         """Extracts speaker embedding from audio data using SpeechBrain."""
         audio_tensor = torch.tensor(audio_data).float().unsqueeze(0)  # Add batch dimension
-        output = self.model(audio_tensor)
+        output = SpeakerRecognitionSystem.model(audio_tensor)  # Use the class model
 
         # Check if the output is a tuple
         if isinstance(output, tuple):
@@ -106,7 +115,7 @@ class SpeakerRecognitionSystem:
         recognized_distance = nearest_neighbors[0][0]  # Get the distance of the most common user
 
         # Define a threshold for acceptance (adjust this based on your model's performance)
-        threshold = 0.4  # Adjust this based on your model's performance
+        threshold = 0.6  # Adjust this based on your model's performance
         if recognized_distance < threshold:  # Ensure we're comparing a float distance
             return recognized_user
         
@@ -142,7 +151,7 @@ def recognize_speaker():
 
         # Predict the speaker
         recognized_user = recognizer.predict(recorded_audio_array)
-        # logging.info(f'Recognized User: {recognized_user}')
+        logging.info(f"user speach : {recognized_user}")
         return recognized_user
     except Exception as e:
         logging.error(f"Error in speaker recognition: {e}")

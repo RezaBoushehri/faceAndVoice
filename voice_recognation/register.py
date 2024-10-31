@@ -116,16 +116,31 @@ class SpeakerRecognition:
             return recognized_user if scores[recognized_user] < 1.2 else "Unknown"  # Adjusted threshold
         return "Unknown"
 
-def record_voice(duration=5):
-    """Records voice for a specified duration and encodes it to Base64."""
+def record_voice():
+    """Records voice while holding down the space bar and encodes it to Base64."""
     fs = 44100  # Sample rate
-    logging.info("Recording...")
-    recording = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
-    sd.wait()  # Wait until recording is finished
-    logging.info("Finished recording.")
-    audio_binary = recording.flatten().tobytes()  # Convert to binary
+    duration = 0  # Initialize duration
+    recording_list = []
+    
+    logging.info("Press and hold the space bar to start recording...")
 
+    while True:
+        if keyboard.is_pressed('space'):
+            # Record in small chunks to build up duration
+            chunk = sd.rec(int(0.1 * fs), samplerate=fs, channels=1, dtype='int16')
+            sd.wait()
+            recording_list.append(chunk.flatten())  # Add each chunk to the list
+            
+        else:
+            if recording_list:  # Stop if there’s a recording to process
+                logging.info("Finished recording.")
+                break
+    
+    # Concatenate all chunks into a single array
+    recording = np.concatenate(recording_list)
+    
     # Encode binary audio as Base64
+    audio_binary = recording.tobytes()
     audio_base64 = base64.b64encode(audio_binary).decode('utf-8')
     return audio_base64
                          
@@ -154,5 +169,6 @@ def register_new_user(username):
 
 if __name__ == "__main__":
     # Example usage
-    register_new_user("mr.mrX")
+    register_new_user("Mr.Jafari")
     # recognize_speaker()
+                                                   

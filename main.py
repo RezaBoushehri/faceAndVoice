@@ -127,12 +127,40 @@ class FaceRecognitionApp:
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
+            # Capture unknown face and log it
+            if name == "Unknown":
+                self.capture_unknown_face(frame[top:bottom, left:right])
+
         # Capture frames for movement analysis if a human is detected
         frames = [camera.get_frame().copy() for _ in range(30) if camera.get_frame() is not None]
         for name in detected_faces:
-            if recognize_speaker() == name:
+            print(f"Logged: {name} Detected")
+            if name != "Unknown":
+                if recognize_speaker() == name:
+                    alive = self.analyze_frames(frames)
+                    self.log_alive_status(alive, name)
+            else:
                 alive = self.analyze_frames(frames)
                 self.log_alive_status(alive, name)
+
+    def capture_unknown_face(self, face_image):
+        """Encodes unknown face in Base64 and logs it with the date."""
+        try:
+            # Encode the face image to Base64
+            _, buffer = cv2.imencode('.jpg', face_image)
+            face_base64 = base64.b64encode(buffer).decode('utf-8')
+
+            # Prepare document with date and Base64 image
+            unknown_log = {
+                "date": datetime.now().isoformat(),
+                "image": face_base64
+            }
+
+            # Insert into unknown_logs collection
+            db.unknown_logs.insert_one(unknown_log)
+            print("Unknown face logged in database.")
+        except Exception as e:
+            print(f"Error capturing unknown face: {e}")
 
     def log_alive_status(self, alive, name):
         status = "alive" if alive else "not alive"

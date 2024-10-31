@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIVE FEED (AI)</title>
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <script src="js/tfjs"></script>
+    <script src="js/tfjs-converter"></script>
+    <script src="js/coco-ssd"></script>
+    <script src="js/coco-ssd.min.js"></script>
+    <style>
+        #canvas {
+            position: absolute; /* Change to absolute positioning */
+            top: 0;            /* Align to the top of the container */
+            left: 50;           /* Align to the left of the container */
+            border-radius: 10px;
+
+            border: 1px solid #0d6efd;
+            z-index: 10;       /* Ensure the canvas is on top */
+        }
+        #video, #image {
+            position: relative;
+            border-radius: 10px;
+            width: 640px;      /* Set fixed width */
+            height: 480px;     /* Set fixed height */
+        }
+        #detectResponse {
+            position: relative;
+            background-color: #222;      /* Dark background color */
+            color: #00ff00;              /* Bright green text color */
+            font-family: 'Courier New', Courier, monospace; /* Monospaced font */
+            font-size: 18px;
+            /* padding: 10px;               Padding for better spacing */
+            border-radius: 5px;          /* Rounded corners */
+            max-height: 200px;           /* Limit height */
+            overflow-y: auto;            /* Scrollable if content overflows */
+            white-space: pre-wrap;       /* Preserve whitespace and wrap text */
+        }
+
+    </style>
+    
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-12 text-center">
+                <h1 class="display-4 mb-4">LIVE FEED </h1>
+            </div>
+        </div>
+        <div class="row g-3 justify-content-center">
+            <div class="col-md-12 top-50 text-center">
+                <div class="mb-3">
+                    <label for="camera-select" class="form-label">Select Camera:</label>
+                    <select id="camera-select" class="form-select w-50 mx-auto">
+                        <option value="201">entrance reseption</option>
+                        <option value="202">Dedicated Unit</option>
+                        <option value="204">Support Unit 1th</option>
+                        <option value="205">Support Unit 2th</option>
+                        <option value="206">Lobby 2th</option>
+                        <option value="207">Accountence</option>
+                        <option value="208">Managers</option>
+                        <option value="209">confrence</option>
+                        <option value="211">Developers</option>
+                        <option value="213">Managment secFloor</option>
+                        <option value="216">Server FirstFloor</option>
+                        <option value="217">Parking</option>
+                        <option value="219">Kitchen</option>
+                       
+                        <option value="kouche">Kouche</option>
+                        <option value="door" selected>Door</option>
+                        <option value="client">Client Camera</option>
+                    </select>
+                </div>
+                <div class="d-flex justify-content-center mb-4" style="position: relative;"> <!-- Add relative positioning here -->
+                    <img id="image" width="640" height="480" src="/video_feed/door" alt="Camera Stream" class="img-fluid">
+                    <video id="video" width="640" height="480" class="img-fluid" autoplay></video>
+                    <canvas id="canvas" width="640" height="480" class="img-fluid"></canvas>
+                </div>
+                <button id="capture-button" class="btn btn-primary btn-lg">Capture and Detect</button>
+                <div class="d-flex justify-content-center m-4" style="position: relative;"> <!-- Add relative positioning here -->
+                    <div id="detectResponse" class="px-5 mb-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script>
+        const cameraSelect = document.getElementById('camera-select');
+        const videoElement = document.getElementById('video');
+        const imageElement = document.getElementById('image');
+        const detectResponse = document.getElementById('detectResponse');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let model;
+
+        // Initialize the model once
+        (async () => {
+            model = await cocoSsd.load();
+        })();
+
+        async function updateCameraFeed() {
+            const selectedCamera = cameraSelect.value;
+            let stream;
+
+            if (selectedCamera === "client") {
+                imageElement.style.display = "none"; 
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                        videoElement.srcObject = stream;
+                        videoElement.style.display = "block"; 
+                    } catch (error) {
+                        console.error("Error accessing the camera:", error);
+                        alert("Could not access the camera. Please check your permissions.");
+                    }
+                }
+            } else {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    videoElement.srcObject = null;
+                }
+                videoElement.style.display = "none"; 
+                imageElement.style.display = "block"; 
+                imageElement.src = `/video_feed/${selectedCamera}`;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas before drawing
+
+            detectResponse.innerHTML = ''
+        }
+
+        cameraSelect.onchange = updateCameraFeed;
+
+        async function loadImageAndDetect(imageSrc) {
+            
+            const image = new Image();
+            image.src = imageSrc;
+            detectResponse.innerHTML = ''
+            image.onload = async () => {
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const predictions = await model.detect(image);
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas before drawing
+                predictions.forEach(prediction => {
+                    ctx.beginPath();
+                    ctx.rect(...prediction.bbox);
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'green';
+                    ctx.stroke();
+                    ctx.fillStyle = 'green';
+                    ctx.fillText(`${prediction.class} - ${Math.round(prediction.score * 100)}%`, prediction.bbox[0], Math.max(prediction.bbox[1] - 5, 10));
+                    detectResponse.innerHTML += `Object Dtecetd : ${prediction.class} - ${Math.round(prediction.score * 100)}% <br>`;
+                });
+            };
+        }
+
+        document.getElementById('capture-button').onclick = async () => {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            if (cameraSelect.value === "client") {
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                const imageDataUrl = canvas.toDataURL();
+                await loadImageAndDetect(imageDataUrl);
+            } else {
+                const capturedImageUrl = imageElement.src;
+                loadImageAndDetect(capturedImageUrl);
+            }
+        };
+
+        updateCameraFeed();
+    </script>
+</body>
+</html>

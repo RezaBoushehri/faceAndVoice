@@ -135,12 +135,11 @@ class FaceRecognitionApp:
         frames = [camera.get_frame().copy() for _ in range(30) if camera.get_frame() is not None]
         for name in detected_faces:
             print(f"Logged: {name} Detected")
+            alive = self.analyze_frames(frames)
             if name != "Unknown":
                 if recognize_speaker() == name:
-                    alive = self.analyze_frames(frames)
                     self.log_alive_status(alive, name)
             else:
-                alive = self.analyze_frames(frames)
                 self.log_alive_status(alive, name)
 
     def capture_unknown_face(self, face_image):

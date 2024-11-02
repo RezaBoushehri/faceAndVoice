@@ -36,7 +36,7 @@ cameras = {
 
 
 # Global variables for capturing frames for each camera
-frame_queues = {camera_id: queue.Queue(maxsize=30) for camera_id in cameras.keys()}
+frame_queues = {camera_id: queue.Queue(maxsize=10) for camera_id in cameras.keys()}
 capture_threads = {}
 
 # Define the allowed IPs
@@ -117,7 +117,7 @@ def serve_js(file):
     return send_from_directory('js', file)
 
 def udp_listener():
-    udp_ip = "0.0.0.0"   # Listening on all available network interfaces
+    udp_ip = "172.16.28.200"   # Listening on all available network interfaces
     udp_port = 8001      # Choose an appropriate port number
     buffer_size = 1024    # Set a buffer size for receiving packets
 
@@ -143,9 +143,9 @@ if __name__ == "__main__":
     udp_thread = threading.Thread(target=udp_listener, daemon=True)
     udp_thread.start()
 
-    # Specify the path to your SSL certificate and key
-    ssl_cert = '/etc/ssl/virtualmin/173020079585654/ssl.cert'
-    ssl_key = '/etc/ssl/virtualmin/173020079585654/ssl.key'
+    # # Specify the path to your SSL certificate and key
+    # ssl_cert = '/etc/ssl/virtualmin/173020079585654/ssl.cert'
+    # ssl_key = '/etc/ssl/virtualmin/173020079585654/ssl.key'
 
     # Run the Flask app with SSL context
-    app.run(host='0.0.0.0', port=8000, debug=False, threaded=True, ssl_context=(ssl_cert, ssl_key))
+    app.run(host='172.16.28.166', port=8000, debug=False, threaded=True)

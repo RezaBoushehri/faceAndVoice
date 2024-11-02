@@ -30,7 +30,6 @@ client = pymongo.MongoClient('mongodb://172.16.28.91:27017/')
 db = client['face_recognition']
 collection = db['users']
 
-
 cameras = {
     "102": "rtsp://admin:farahoosh@192.168.1.102",
     "201": "rtsp://admin:farahoosh@192.168.1.201",
@@ -51,6 +50,7 @@ cameras = {
     "door": "rtsp://admin:farahoosh@172.16.28.6",
     "kouche": "rtsp://camera:FARAwallboard@192.168.1.212",
 }
+
 def load_known_faces():
     known_faces = []
     known_names = []
@@ -70,7 +70,7 @@ def load_known_faces():
 known_faces, known_names = load_known_faces()
 
 class VideoCamera:
-    def __init__(self, source=0):
+    def __init__(self, source="rtsp://admin:farahoosh@192.168.1.211"):
         self.vid = cv2.VideoCapture(source)
         self.frame = None
         self.running = True
@@ -90,9 +90,8 @@ class VideoCamera:
 
     def __del__(self):
         self.running = False
+        self.thread.join()
         self.vid.release()
-
-camera = VideoCamera()
 
 class FaceRecognitionApp:
     def __init__(self, root):
@@ -207,44 +206,26 @@ class FaceRecognitionApp:
         blink_count = 0
         motion_detected = False
         previous_frame = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-        blink_frames = 0
 
-        for i in range(1, len(frames)):
-            current_frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
-            frame_diff = cv2.absdiff(previous_frame, current_frame)
-            _, thresh = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
-            non_zero_count = np.sum(thresh)
-            if non_zero_count > 10000:
+        for frame in frames[1:]:
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            delta_frame = cv2.absdiff(previous_frame, gray_frame)
+            thresh_frame = cv2.threshold(delta_frame, 30, 255, cv2.THRESH_BINARY)[1]
+            contours, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            if contours:
                 motion_detected = True
-            previous_frame = current_frame
 
-            faces = detector(current_frame)
-            if faces:
-                shape = predictor(current_frame, faces[0])
-                landmarks = np.array([[p.x, p.y] for p in shape.parts()])
-                left_eye = landmarks[36:42]
-                right_eye = landmarks[42:48]
-                left_ear = self.eye_aspect_ratio(left_eye)
-                right_ear = self.eye_aspect_ratio(right_eye)
-                if left_ear < 0.25 or right_ear < 0.25:
-                    blink_frames += 1
-                if blink_frames >= 1:
-                    blink_count += 1
-                    blink_frames = 0
+            if blink_count >= 3:
+                alive = True
+            previous_frame = gray_frame
 
-        if blink_count > 0 and motion_detected:
-            alive = True
+        return alive or motion_detected
 
-        return alive
-
-    def eye_aspect_ratio(self, eye):
-        A = distance.euclidean(eye[1], eye[5])
-        B = distance.euclidean(eye[2], eye[4])
-        C = distance.euclidean(eye[0], eye[3])
-        ear = (A + B) / (2.0 * C)
-        return ear
 
 if __name__ == "__main__":
+    global camera
+    camera = VideoCamera()  # Initialize with a default camera
     root = tk.Tk()
     app = FaceRecognitionApp(root)
     root.mainloop()

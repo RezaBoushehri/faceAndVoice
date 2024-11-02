@@ -6,6 +6,7 @@ import logging
 import time
 import queue
 import socket  # For UDP socket
+
 app = Flask(__name__, static_folder="public")
 
 # Set up logging
@@ -32,6 +33,7 @@ cameras = {
     "door": "rtsp://admin:farahoosh@3207@172.16.28.6",   # RTSP camera
     "kouche": "rtsp://camera:FARAwallboard@192.168.1.212",  # RTSP camera
 }
+
 
 # Global variables for capturing frames for each camera
 frame_queues = {camera_id: queue.Queue(maxsize=30) for camera_id in cameras.keys()}
@@ -146,4 +148,4 @@ if __name__ == "__main__":
     ssl_key = '/etc/ssl/virtualmin/173020079585654/ssl.key'
 
     # Run the Flask app with SSL context
-    app.run(host='0.0.0.0', port=8000, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=8000, debug=False, threaded=True, ssl_context=(ssl_cert, ssl_key))

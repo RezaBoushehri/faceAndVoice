@@ -31,25 +31,26 @@ db = client['face_recognition']
 collection = db['users']
 
 cameras = {
-    "102": "rtsp://admin:farahoosh@192.168.1.102",
-    "201": "rtsp://admin:farahoosh@192.168.1.201",
-    "202": "rtsp://admin:farahoosh@192.168.1.202",
-    "203": "rtsp://admin:farahoosh@192.168.1.203",
-    "204": "rtsp://admin:farahoosh@192.168.1.204",
-    "205": "rtsp://admin:farahoosh@192.168.1.205",
-    "206": "rtsp://admin:farahoosh@192.168.1.206",
-    "207": "rtsp://admin:farahoosh@192.168.1.207",
-    "208": "rtsp://admin:farahoosh@192.168.1.208",
-    "209": "rtsp://admin:farahoosh@192.168.1.209",
-    "211": "rtsp://admin:farahoosh@192.168.1.211",
-    "213": "rtsp://admin:farahoosh@192.168.1.213",
-    "216": "rtsp://admin:farahoosh@192.168.1.216",
-    "217": "rtsp://admin:farahoosh@192.168.1.217",
-    "218": "rtsp://admin:farahoosh@192.168.1.218",
-    "219": "rtsp://admin:farahoosh@192.168.1.219",
-    "door": "rtsp://admin:farahoosh@172.16.28.6",
-    "kouche": "rtsp://camera:FARAwallboard@192.168.1.212",
+    # "102": "rtsp://admin:farahoosh@3207@192.168.1.102",  # RTSP camera
+    "entrance reception": "rtsp://admin:farahoosh@3207@192.168.1.201",  # RTSP entrance reception
+    "Dedicated Unit": "rtsp://admin:farahoosh@3207@192.168.1.202",  # RTSP Dedicated Unit
+    "203": "rtsp://admin:farahoosh@3207@192.168.1.203",  # RTSP camera
+    "Support Unit 1st": "rtsp://admin:farahoosh@3207@192.168.1.204",  # RTSP Support Unit 1st
+    "Support Unit 2nd": "rtsp://admin:farahoosh@3207@192.168.1.205",  # RTSP Support Unit 2nd
+    "Lobby 2nd": "rtsp://admin:farahoosh@3207@192.168.1.206",  # RTSP Lobby 2nd
+    "Accountancy": "rtsp://admin:farahoosh@3207@192.168.1.207",  # RTSP Accountancy
+    "Managers": "rtsp://admin:farahoosh@3207@192.168.1.208",  # RTSP Managers
+    "conference": "rtsp://admin:farahoosh@3207@192.168.1.209",  # RTSP conference
+    "Developers": "rtsp://admin:farahoosh@3207@192.168.1.211",  # RTSP Developers
+    "Management secFloor": "rtsp://admin:farahoosh@3207@192.168.1.213",  # RTSP Management secFloor
+    "Server FirstFloor": "rtsp://admin:farahoosh@3207@192.168.1.216",  # RTSP Server FirstFloor
+    "Parking": "rtsp://admin:farahoosh@3207@192.168.1.217",  # RTSP Parking
+    "storage": "rtsp://admin:farahoosh@3207@192.168.1.218",  # RTSP storage
+    "kitchen": "rtsp://admin:farahoosh@3207@192.168.1.219",  # RTSP kitchen
+    "door": "rtsp://admin:farahoosh@3207@172.16.28.6",   # RTSP camera
+    "kouche": "rtsp://camera:FARAwallboard@192.168.1.212",  # RTSP camera
 }
+
 
 def load_known_faces():
     known_faces = []
@@ -206,21 +207,42 @@ class FaceRecognitionApp:
         blink_count = 0
         motion_detected = False
         previous_frame = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
+        blink_frames = 0
 
-        for frame in frames[1:]:
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            delta_frame = cv2.absdiff(previous_frame, gray_frame)
-            thresh_frame = cv2.threshold(delta_frame, 30, 255, cv2.THRESH_BINARY)[1]
-            contours, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            if contours:
+        for i in range(1, len(frames)):
+            current_frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
+            frame_diff = cv2.absdiff(previous_frame, current_frame)
+            _, thresh = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
+            non_zero_count = np.sum(thresh)
+            if non_zero_count > 10000:
                 motion_detected = True
+            previous_frame = current_frame
 
-            if blink_count >= 3:
-                alive = True
-            previous_frame = gray_frame
+            faces = detector(current_frame)
+            if faces:
+                shape = predictor(current_frame, faces[0])
+                landmarks = np.array([[p.x, p.y] for p in shape.parts()])
+                left_eye = landmarks[36:42]
+                right_eye = landmarks[42:48]
+                left_ear = self.eye_aspect_ratio(left_eye)
+                right_ear = self.eye_aspect_ratio(right_eye)
+                if left_ear < 0.25 or right_ear < 0.25:
+                    blink_frames += 1
+                if blink_frames >= 1:
+                    blink_count += 1
+                    blink_frames = 0
 
-        return alive or motion_detected
+        if blink_count > 0 and motion_detected:
+            alive = True
+
+        return alive
+
+    def eye_aspect_ratio(self, eye):
+        A = distance.euclidean(eye[1], eye[5])
+        B = distance.euclidean(eye[2], eye[4])
+        C = distance.euclidean(eye[0], eye[3])
+        ear = (A + B) / (2.0 * C)
+        return ear
 
 
 if __name__ == "__main__":

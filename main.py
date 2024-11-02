@@ -30,27 +30,6 @@ client = pymongo.MongoClient('mongodb://172.16.28.91:27017/')
 db = client['face_recognition']
 collection = db['users']
 
-
-cameras = {
-    "102": "rtsp://admin:farahoosh@192.168.1.102",
-    "201": "rtsp://admin:farahoosh@192.168.1.201",
-    "202": "rtsp://admin:farahoosh@192.168.1.202",
-    "203": "rtsp://admin:farahoosh@192.168.1.203",
-    "204": "rtsp://admin:farahoosh@192.168.1.204",
-    "205": "rtsp://admin:farahoosh@192.168.1.205",
-    "206": "rtsp://admin:farahoosh@192.168.1.206",
-    "207": "rtsp://admin:farahoosh@192.168.1.207",
-    "208": "rtsp://admin:farahoosh@192.168.1.208",
-    "209": "rtsp://admin:farahoosh@192.168.1.209",
-    "211": "rtsp://admin:farahoosh@192.168.1.211",
-    "213": "rtsp://admin:farahoosh@192.168.1.213",
-    "216": "rtsp://admin:farahoosh@192.168.1.216",
-    "217": "rtsp://admin:farahoosh@192.168.1.217",
-    "218": "rtsp://admin:farahoosh@192.168.1.218",
-    "219": "rtsp://admin:farahoosh@192.168.1.219",
-    "door": "rtsp://admin:farahoosh@172.16.28.6",
-    "kouche": "rtsp://camera:FARAwallboard@192.168.1.212",
-}
 def load_known_faces():
     known_faces = []
     known_names = []
@@ -101,13 +80,6 @@ class FaceRecognitionApp:
         self.canvas = tk.Canvas(root, width=FRAME_WIDTH, height=FRAME_HEIGHT)
         self.canvas.pack()
 
-        # Dropdown for camera selection
-        self.selected_camera = tk.StringVar(root)
-        self.selected_camera.set(list(cameras.keys())[0])  # Set default camera
-
-        camera_menu = tk.OptionMenu(root, self.selected_camera, *cameras.keys())
-        camera_menu.pack()
-
         # Add start recognition button
         self.start_button = tk.Button(root, text="Start Recognition", command=self.start_recognition)
         self.start_button.pack()
@@ -129,15 +101,6 @@ class FaceRecognitionApp:
         self.root.after(33, self.update)
 
     def start_recognition(self):
-        # Get the selected camera URL
-        selected_camera_key = self.selected_camera.get()
-        camera_url = cameras[selected_camera_key]
-
-        # Reinitialize the camera with the selected RTSP URL
-        global camera
-        camera.__del__()  # Release current camera
-        camera = VideoCamera(source=camera_url)
-
         frame = camera.get_frame()
         if frame is not None:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

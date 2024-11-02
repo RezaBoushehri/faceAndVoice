@@ -5,7 +5,7 @@ import threading
 import logging
 import time
 import queue
-
+import socket  # For UDP socket
 app = Flask(__name__, static_folder="public")
 
 # Set up logging
@@ -39,8 +39,11 @@ capture_threads = {}
 
 # Define the allowed IPs
 allowed_ips = [
-    '172.16.28.166',
-    '127.0.0.1',
+    '172.16.28.139',  # support's TV
+    '172.16.28.132',  # Another mr.jafari
+    '172.16.28.166',  # CIDR GOD
+    '172.16.28.80',   # CIDR mr.Moezi
+    '172.16.28.79',   # CIDR mr.Goudarzi
 ]
 
 def allowed_ip():
@@ -66,20 +69,18 @@ def capture_frames(camera_id, rtsp_source):
     while True:
         success, frame = cap.read()
         if success:
-            # Process the frame before putting it into the queue
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
             ret, buffer = cv2.imencode('.jpg', frame, encode_param)
             if ret:
                 try:
-                    # Put the processed frame into the queue without blocking
                     frame_queues[camera_id].put(buffer.tobytes(), block=True)
                 except queue.Full:
                     logging.warning(f"Queue for {camera_id} is full, skipping frame...")
         else:
             logging.warning(f"Failed to read frame from {camera_id}. Reconnecting...")
             cap.release()
-            time.sleep(1)  # Wait before trying to reconnect
-            cap = cv2.VideoCapture(rtsp_source)  # Reconnect if failed
+            time.sleep(1)
+            cap = cv2.VideoCapture(rtsp_source)
 
 @app.route('/video_feed/<camera_id>')
 def video_feed(camera_id):
@@ -95,7 +96,7 @@ def video_feed(camera_id):
 def generate_frames(camera_id):
     while True:
         try:
-            frame = frame_queues[camera_id].get(timeout=1)  # Wait for a frame with timeout
+            frame = frame_queues[camera_id].get(timeout=1)
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         except queue.Empty:
@@ -113,11 +114,36 @@ def serve_css(file):
 def serve_js(file):
     return send_from_directory('js', file)
 
+def udp_listener():
+    udp_ip = "0.0.0.0"   # Listening on all available network interfaces
+    udp_port = 8001      # Choose an appropriate port number
+    buffer_size = 1024    # Set a buffer size for receiving packets
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((udp_ip, udp_port))
+    logging.info(f"Started UDP listener on {udp_ip}:{udp_port}")
+
+    while True:
+        try:
+            data, addr = sock.recvfrom(buffer_size)  # Receive UDP packet
+            logging.info(f"Received UDP packet from {addr}: {data}")
+            # Process the UDP data as needed
+        except Exception as e:
+            logging.error(f"Error in UDP listener: {e}")
+
 if __name__ == "__main__":
     # Start capturing frames for each camera at the application startup
     for camera_id, rtsp_source in cameras.items():
-        if camera_id not in capture_threads:
-            capture_threads[camera_id] = threading.Thread(target=capture_frames, args=(camera_id, rtsp_source), daemon=True)
-            capture_threads[camera_id].start()
+        capture_threads[camera_id] = threading.Thread(target=capture_frames, args=(camera_id, rtsp_source), daemon=True)
+        capture_threads[camera_id].start()
 
+    # Start UDP listener in a separate thread
+    udp_thread = threading.Thread(target=udp_listener, daemon=True)
+    udp_thread.start()
+
+    # Specify the path to your SSL certificate and key
+    ssl_cert = '/etc/ssl/virtualmin/173020079585654/ssl.cert'
+    ssl_key = '/etc/ssl/virtualmin/173020079585654/ssl.key'
+
+    # Run the Flask app with SSL context
     app.run(host='0.0.0.0', port=8000, debug=False, threaded=True)

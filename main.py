@@ -49,7 +49,7 @@ def load_known_faces():
 known_faces, known_names = load_known_faces()
 
 class VideoCamera:
-    def __init__(self, source=0):
+    def __init__(self, source= "rtsp://admin:farahoosh@3207@192.168.1.211"):
         self.vid = cv2.VideoCapture(source)
         self.frame = None
         self.running = True

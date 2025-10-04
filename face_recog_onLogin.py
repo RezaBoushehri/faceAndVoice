@@ -15,7 +15,8 @@ import pyttsx3  # For text-to-speech; install with: pip install pyttsx3
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-# from voice_recognation.recognize_speakerTorch import recognize_speaker
+from voice_recognation.recognize_speakerTorch import recognize_speaker
+import os
 
 # Define your desired frame dimensions
 FRAME_WIDTH = 1080
@@ -157,15 +158,14 @@ class FaceRecognitionApp:
 
         # Log detected faces
         for name in detected_faces:
-            # if recognize_speaker() == name :
-                alive = self.analyze_frames(frames)
-                self.log_alive_status(alive, name)
+            alive = self.analyze_frames(frames)
+            self.log_alive_status(alive, name, frames)
 
     def log_face(self, name):
         log_data = {"name": name, "time": datetime.now()}
         print(f"Logged {name} at {log_data['time']}")
 
-    def log_alive_status(self, alive, name):
+    def log_alive_status(self, alive, name, frames):
         log_data = {
             "alive": alive,
             "timestamp": datetime.now()
@@ -174,12 +174,34 @@ class FaceRecognitionApp:
         print(f"Logged: {name} is {status} at {log_data['timestamp']}")
         
         if alive:
-            if name == "BB":
-                self.play_tts("Welcome BB, access granted.")
-                self.close_app()  # Assuming close_app() is the method to close the application
-            else:
+            if name != "BB":
+                # Save picture in magels folder with timestamp
+                if frames:
+                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{name}_{timestamp_str}.jpg"
+                    os.makedirs("magels", exist_ok=True)
+                    cv2.imwrite(f"magels/{filename}", frames[-1])
                 self.send_email_alert(name)
                 self.logout_system()
+            else:
+                # For BB, perform voice recognition
+                recognized_voice = recognize_speaker()
+                if recognized_voice == name:
+                    self.play_tts("Welcome BB, access granted.")
+                    self.close_app()
+                else:
+                    # Save suspicious BB picture
+                    if frames:
+                        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"suspicious_BB_{timestamp_str}.jpg"
+                        os.makedirs("magels", exist_ok=True)
+                        cv2.imwrite(f"magels/{filename}", frames[-1])
+                    self.send_email_alert(name)
+                    self.logout_system()
+
+    def close_app(self):
+        self.root.quit()
+        self.root.destroy()
 
     def play_tts(self, text):
         """Play text-to-speech."""
@@ -213,7 +235,6 @@ class FaceRecognitionApp:
 
     def logout_system(self):
         """Log out the current user. This is OS-specific; example for Windows."""
-        import os
         import platform
         system = platform.system()
         if system == "Windows":

@@ -11,6 +11,10 @@ from datetime import datetime
 import time
 import dlib  # Make sure to install dlib
 from scipy.spatial import distance  # For EAR calculation
+import pyttsx3  # For text-to-speech; install with: pip install pyttsx3
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 # from voice_recognation.recognize_speakerTorch import recognize_speaker
 
 # Define your desired frame dimensions
@@ -26,9 +30,17 @@ detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
 
 # MongoDB connection
-client = pymongo.MongoClient('mongodb://root:admin@localhost:27017/face_recognition')
+client = pymongo.MongoClient('mongodb://root:admin@localhost:27017/')
 db = client['face_recognition']
 collection = db['users']
+
+# Email configuration - Replace with your actual SMTP details
+SMTP_SERVER = 'smtp.gmail.com'  # Example: Gmail
+SMTP_PORT = 465
+SENDER_EMAIL = 'boshehry.reza@gmail.com'
+SENDER_PASSWORD = 'vyylcmcjovuyrfcj'  # Use app password for Gmail
+RECIPIENT_EMAIL = 'reza.boshehry@gmail.com'
+ALERT_SUBJECT = 'WARNING Unauthorized Access Detected'
 
 # Load known faces and names from MongoDB
 def load_known_faces():
@@ -160,6 +172,56 @@ class FaceRecognitionApp:
         }
         status = "alive" if alive else "not alive"
         print(f"Logged: {name} is {status} at {log_data['timestamp']}")
+        
+        if alive:
+            if name == "BB":
+                self.play_tts("Welcome BB, access granted.")
+                self.close_app()  # Assuming close_app() is the method to close the application
+            else:
+                self.send_email_alert(name)
+                self.logout_system()
+
+    def play_tts(self, text):
+        """Play text-to-speech."""
+        try:
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print(f"TTS error: {e}")
+
+    def send_email_alert(self, name):
+        """Send email alert via SMTP."""
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = SENDER_EMAIL
+            msg['To'] = RECIPIENT_EMAIL
+            msg['Subject'] = ALERT_SUBJECT
+
+            body = f"Unauthorized person detected: {name}. Timestamp: {datetime.now()}. Action: Logging out."
+            msg.attach(MIMEText(body, 'plain'))
+
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            text = msg.as_string()
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, text)
+            server.quit()
+            print(f"Email alert sent for {name}")
+        except Exception as e:
+            print(f"Email error: {e}")
+
+    def logout_system(self):
+        """Log out the current user. This is OS-specific; example for Windows."""
+        import os
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            os.system("shutdown /l")  # Logs out current user
+        elif system == "Linux":
+            os.system("gnome-session-quit --logout")  # Example for GNOME; adjust as needed
+        else:
+            print("Logout not supported on this OS.")
 
     def analyze_frames(self, frames):
         """Analyze the frames to check for blinking, mouth movement, or head rotation."""

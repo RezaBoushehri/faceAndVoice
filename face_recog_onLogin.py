@@ -3,8 +3,7 @@ import numpy as np
 import pymongo
 import base64
 import threading
-from PIL import Image, ImageTk
-import tkinter as tk
+from PIL import Image
 import io
 import face_recognition
 from datetime import datetime
@@ -15,7 +14,7 @@ import pyttsx3  # For text-to-speech; install with: pip install pyttsx3
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from voice_recognation.recognize_speakerTorch import recognize_speaker
+# from voice_recognation.recognize_speakerTorch import recognize_speaker
 import os
 
 # Define your desired frame dimensions
@@ -90,34 +89,23 @@ class VideoCamera:
 camera = VideoCamera()
 
 class FaceRecognitionApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Face Recognition")
-        self.canvas = tk.Canvas(root, width=FRAME_WIDTH, height=FRAME_HEIGHT)
-        self.canvas.pack()
-        
+    def __init__(self):
         self.detecting = False
         self.face_detected = False
-        self.update()
+        self.running = True
 
-    def update(self):
-        frame = camera.get_frame()
-        if frame is not None and not self.face_detected:
-            # Reduce frame resolution to 640x480 for lower resource usage
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    def run(self):
+        while self.running:
+            frame = camera.get_frame()
+            if frame is not None and not self.face_detected:
+                # Reduce frame resolution to 640x480 for lower resource usage
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Detect only if human is detected and face not logged recently
-            if self.detect_human(rgb_frame):
-                self.capture_and_detect(rgb_frame)
+                # Detect only if human is detected and face not logged recently
+                if self.detect_human(rgb_frame):
+                    self.capture_and_detect(rgb_frame)
 
-            # Show frame on the canvas
-            display_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(display_frame)
-            imgtk = ImageTk.PhotoImage(image=img)
-            self.canvas.create_image(0, 0, anchor='nw', image=imgtk)
-            self.canvas.imgtk = imgtk
-
-        self.root.after(33, self.update)  # Increase update interval to 33 ms
+            time.sleep(0.033)  # Equivalent to 30 FPS update
 
     def detect_human(self, frame):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -144,13 +132,13 @@ class FaceRecognitionApp:
                 else:
                     detected_faces.add('Unknown')
 
-            # Draw rectangles and labels
+            # Draw rectangles and labels (optional, for logging or debugging; can be removed if not needed)
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
         # ** Capture frames for movement analysis if a human is detected **
         frames = []
-        for _ in range(30):  # Capture 10 frames
+        for _ in range(50):  # Capture 50 frames
             captured_frame = camera.get_frame()
             if captured_frame is not None:
                 frames.append(captured_frame.copy())  # Use copy to preserve the frame
@@ -172,7 +160,7 @@ class FaceRecognitionApp:
         }
         status = "alive" if alive else "not alive"
         print(f"Logged: {name} is {status} at {log_data['timestamp']}")
-        
+
         if alive:
             if name != "BB":
                 # Save picture in magels folder with timestamp
@@ -184,24 +172,10 @@ class FaceRecognitionApp:
                 self.send_email_alert(name)
                 self.logout_system()
             else:
-                # For BB, perform voice recognition
-                recognized_voice = recognize_speaker()
-                if recognized_voice == name:
-                    self.play_tts("Welcome BB, access granted.")
-                    self.close_app()
-                else:
-                    # Save suspicious BB picture
-                    if frames:
-                        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        filename = f"suspicious_BB_{timestamp_str}.jpg"
-                        os.makedirs("magels", exist_ok=True)
-                        cv2.imwrite(f"magels/{filename}", frames[-1])
-                    self.send_email_alert(name)
-                    self.logout_system()
-
+                self.play_tts("Welcome BB, access granted.")
+                self.close_app()
     def close_app(self):
-        self.root.quit()
-        self.root.destroy()
+        self.running = False
 
     def play_tts(self, text):
         """Play text-to-speech."""
@@ -317,6 +291,10 @@ class FaceRecognitionApp:
         return ear
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = FaceRecognitionApp(root)
-    root.mainloop()
+    app = FaceRecognitionApp()
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        app.close_app()
+    finally:
+        camera.__del__()

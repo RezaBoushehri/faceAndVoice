@@ -1,0 +1,8 @@
+numpy
+opencv-python
+Pillow
+pymongo
+scipy
+dlib
+face_recognition
+pyttsx3

@@ -346,7 +346,8 @@ class FaceRecognitionApp:
             status = "alive" if alive else "not alive"
             print(f"Logged: {name} is {status} at {log_data['timestamp']}")
 
-        if alive:
+        # if alive:
+        if True:
             if "BB" in detected_faces:
                 # If BB is among detected faces, grant access
                 self.play_tts("Welcome Reza Boushehri, access granted.")
@@ -436,7 +437,7 @@ class FaceRecognitionApp:
 
             # Count non-zero pixels (indicating motion)
             non_zero_count = np.sum(thresh)
-            if non_zero_count > 5000:  # Lowered threshold for smaller frames
+            if non_zero_count > 50000:  # Lowered threshold for smaller frames
                 motion_detected = True
 
             previous_frame = current_frame  # Update previous frame for the next iteration

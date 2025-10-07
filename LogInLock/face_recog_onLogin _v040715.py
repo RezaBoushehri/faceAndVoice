@@ -27,7 +27,7 @@ hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
 # Load dlib's face detector and the facial landmark predictor
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
+predictor = dlib.shape_predictor('../shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
 
 # MongoDB connection
 client = pymongo.MongoClient('mongodb://root:admin@localhost:27017/')

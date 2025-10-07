@@ -27,7 +27,7 @@ hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
 # Load dlib's face detector and the facial landmark predictor
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
+predictor = dlib.shape_predictor('../shape_predictor_68_face_landmarks.dat')  # Ensure this file is present
 
 # MongoDB connection
 client = pymongo.MongoClient('mongodb://root:admin@localhost:27017/')
@@ -268,14 +268,16 @@ class FaceRecognitionApp:
             self.last_valid_detection = datetime.now()  # Update last detection time
             self.locked = False  # Unlock if was locked
             # Save picture in magels folder with timestamp
+           
+            self.play_tts("Welcome Reza Boushehri, access granted.")
+            self.close_app()
+        else:
             if frames:
                 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"{name}_{timestamp_str}.jpg"
                 os.makedirs("magels", exist_ok=True)
                 cv2.imwrite(f"magels/{filename}", frames[-1])
-            self.play_tts("Welcome Reza Boushehri, The best Developer in the world. access granted.")
-            self.close_app()
-        else:
+            self.play_tts("access denied.")
             if not self.locked:  # Only alert if not already locked
                 self.send_email_alert(name)
                 self.lock_system()  # Lock instead of logout for unauthorized

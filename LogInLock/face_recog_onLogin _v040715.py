@@ -6,7 +6,7 @@ import threading
 from PIL import Image
 import io
 import face_recognition
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import dlib  # Make sure to install dlib
 from scipy.spatial import distance  # For EAR calculation
@@ -41,6 +41,15 @@ SENDER_EMAIL = 'boshehry.reza@gmail.com'
 SENDER_PASSWORD = 'vyylcmcjovuyrfcj'  # Use app password for Gmail
 RECIPIENT_EMAIL = 'reza.boshehry@gmail.com'
 ALERT_SUBJECT = 'WARNING Unauthorized Access Detected'
+
+# Lock timeout in minutes
+LOCK_TIMEOUT_MINUTES = 1
+
+# Face recognition tolerance (lower = stricter matching)
+TOLERANCE = 0.5  # Default is 0.6; lower for higher security
+
+# Maximum failed attempts before permanent lock or logout
+MAX_FAILED_ATTEMPTS = 3
 
 # Load known faces and names from MongoDB
 def load_known_faces():
@@ -93,17 +102,26 @@ class FaceRecognitionApp:
         self.detecting = False
         self.face_detected = False
         self.running = True
+        self.locked = False  # Flag for locked state
+        self.last_valid_detection = datetime.now()  # Track last valid face detection time
+        self.failed_attempts = 0  # Counter for failed unlock attempts
 
     def run(self):
         while self.running:
             frame = camera.get_frame()
-            if frame is not None and not self.face_detected:
-                # Reduce frame resolution to 640x480 for lower resource usage
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if frame is not None:
+                # Check for lock timeout
+                if not self.locked and (datetime.now() - self.last_valid_detection) > timedelta(minutes=LOCK_TIMEOUT_MINUTES):
+                    self.lock_system()
+                    print("System locked due to inactivity.")
 
-                # Detect only if human is detected and face not logged recently
-                if self.detect_human(rgb_frame):
-                    self.capture_and_detect(rgb_frame)
+                if not self.face_detected:
+                    # Reduce frame resolution to 640x480 for lower resource usage
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                    # Detect only if human is detected and face not logged recently
+                    if self.detect_human(rgb_frame):
+                        self.capture_and_detect(rgb_frame)
 
             time.sleep(0.033)  # Equivalent to 30 FPS update
 
@@ -113,6 +131,66 @@ class FaceRecognitionApp:
         return len(humans) > 0
 
     def capture_and_detect(self, frame):
+        # Always capture frames for liveness detection
+        frames = []
+        for _ in range(3):  # Capture 3 frames for analysis
+            captured_frame = camera.get_frame()
+            if captured_frame is not None:
+                small_frame = cv2.resize(captured_frame, (640, 480))  # Lower resolution for speed
+                frames.append(small_frame.copy())
+            time.sleep(0.1)
+
+        alive = self.analyze_frames(frames)
+        if not alive:
+            print("Liveness detection failed: Possible spoofing attempt.")
+            if self.locked:
+                self.failed_attempts += 1
+                if self.failed_attempts >= MAX_FAILED_ATTEMPTS:
+                    self.permanent_lock()
+            return
+
+        if self.locked:
+            # If locked, only allow unlocking with valid face + liveness
+            face_locations = face_recognition.face_locations(frame)
+            face_encodings = face_recognition.face_encodings(frame, face_locations)
+
+            detected_faces = set()
+
+            for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+                matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=TOLERANCE)
+                name = "Unknown"
+
+                if True in matches:
+                    face_distances = face_recognition.face_distance(known_faces, face_encoding)
+                    best_match_index = np.argmin(face_distances)
+                    if face_distances[best_match_index] < TOLERANCE:
+                        name = known_names[best_match_index]
+                        detected_faces.add(name)
+                    else:
+                        detected_faces.add('Unknown')
+                else:
+                    detected_faces.add('Unknown')
+
+                # Draw rectangles and labels (optional)
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+            # Log detected faces only if valid
+            for name in detected_faces:
+                if name == "BB":
+                    self.log_alive_status(alive, name, frames)
+                    self.failed_attempts = 0  # Reset on success
+                    return  # Unlock and grant access
+
+            # Failed attempt
+            self.failed_attempts += 1
+            print(f"Failed unlock attempt: {self.failed_attempts}/{MAX_FAILED_ATTEMPTS}")
+            if self.failed_attempts >= MAX_FAILED_ATTEMPTS:
+                self.permanent_lock()
+            self.play_tts("Access denied. Too many failed attempts.")
+            return
+
+        # Normal detection flow (unlocked state)
         face_locations = face_recognition.face_locations(frame)
         face_encodings = face_recognition.face_encodings(frame, face_locations)
 
@@ -120,36 +198,26 @@ class FaceRecognitionApp:
         detected_faces = set()
 
         for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-            matches = face_recognition.compare_faces(known_faces, face_encoding)
+            matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=TOLERANCE)
             name = "Unknown"
 
-            if matches:
+            if True in matches:
                 face_distances = face_recognition.face_distance(known_faces, face_encoding)
                 best_match_index = np.argmin(face_distances)
-                if matches[best_match_index]:
+                if face_distances[best_match_index] < TOLERANCE:
                     name = known_names[best_match_index]
                     detected_faces.add(name)
                 else:
                     detected_faces.add('Unknown')
+            else:
+                detected_faces.add('Unknown')
 
-            # Draw rectangles and labels (optional, for logging or debugging; can be removed if not needed)
+            # Draw rectangles and labels (optional)
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
-        # ** Capture frames for movement analysis if a human is detected **
-        # تغییر: ۳ فریم با sleep ۰.۱ ثانیه (کل زمان ~۰.۳ ثانیه به جای ۱۵ ثانیه)
-        frames = []
-        for _ in range(3):  # کم کردن به ۳ فریم
-            captured_frame = camera.get_frame()
-            if captured_frame is not None:
-                # تغییر: resize فریم برای سرعت بیشتر در analyze
-                small_frame = cv2.resize(captured_frame, (640, 480))  # رزولوشن کمتر
-                frames.append(small_frame.copy())
-            time.sleep(0.1)  # sleep کوتاه
-
         # Log detected faces
         for name in detected_faces:
-            alive = self.analyze_frames(frames)
             self.log_alive_status(alive, name, frames)
 
     def analyze_frames(self, frames):
@@ -166,12 +234,12 @@ class FaceRecognitionApp:
         for i in range(1, len(frames)):
             current_frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
 
-            # تغییر: threshold motion رو بالاتر ببر برای تشخیص سریع‌تر (کمتر حساس)
+            # Motion detection with stricter threshold for security
             frame_diff = cv2.absdiff(previous_frame, current_frame)
-            _, thresh = cv2.threshold(frame_diff, 50, 255, cv2.THRESH_BINARY)  # threshold بالاتر = سریع‌تر
+            _, thresh = cv2.threshold(frame_diff, 40, 255, cv2.THRESH_BINARY)  # Slightly stricter
 
             non_zero_count = np.sum(thresh)
-            if non_zero_count > 5000:  # threshold کمتر = حساس‌تر اما سریع‌تر
+            if non_zero_count > 8000:  # Higher threshold for more reliable motion
                 motion_detected = True
 
             previous_frame = current_frame
@@ -191,20 +259,20 @@ class FaceRecognitionApp:
                 left_ear = self.eye_aspect_ratio(left_eye)
                 right_ear = self.eye_aspect_ratio(right_eye)
 
-                # تغییر: EAR threshold رو کمی بالاتر ببر (۰.۲۷) برای تشخیص سریع‌تر blink
-                if left_ear < 0.27 or right_ear < 0.27:
+                # Stricter EAR threshold for blink detection
+                if left_ear < 0.25 or right_ear < 0.25:  # Lower threshold for better anti-spoofing
                     blink_frames += 1
 
-                if blink_frames >= 1:  # حداقل ۱ فریم blink کافیه
+                if blink_frames >= 1:  # At least 1 frame blink
                     blink_count += 1
-                    blink_frames = 0  # reset سریع
+                    blink_frames = 0
 
-        # Determine if the person is alive based on blink and motion detection
-        # تغییر: شرط ساده‌تر – فقط یکی از blink یا motion کافیه (برای سرعت)
-        if blink_count > 0 or motion_detected:
+        # Require both blink and motion for higher security
+        if blink_count > 0 and motion_detected:
             alive = True
 
         return alive
+
     def log_face(self, name):
         log_data = {"name": name, "time": datetime.now()}
         print(f"Logged {name} at {log_data['time']}")
@@ -217,21 +285,51 @@ class FaceRecognitionApp:
         status = "alive" if alive else "not alive"
         print(f"Logged: {name} is {status} at {log_data['timestamp']}")
 
-        if alive:
-            if name != "BB":
-                # Save picture in magels folder with timestamp
-                if frames:
-                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"{name}_{timestamp_str}.jpg"
-                    os.makedirs("magels", exist_ok=True)
-                    cv2.imwrite(f"magels/{filename}", frames[-1])
+        if name == "BB":
+            self.last_valid_detection = datetime.now()  # Update last detection time
+            self.locked = False  # Unlock if was locked
+            # Save picture in magels folder with timestamp
+            if frames:
+                timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{name}_{timestamp_str}.jpg"
+                os.makedirs("magels", exist_ok=True)
+                cv2.imwrite(f"magels/{filename}", frames[-1])
+            self.play_tts("Welcome Reza Boushehri, The best Developer in the world. access granted.")
+            # App continues running
+        else:
+            # For unknown faces, deny access: send alert and lock (if not already locked)
+            if not self.locked:
                 self.send_email_alert(name)
-                self.logout_system()
+                self.lock_system()
             else:
-                self.play_tts("Welcome Reza Boushehri, The best Developer in the world. access granted.")
-                self.close_app()
-    def close_app(self):
-        self.running = False
+                # If already locked, just log the attempt (no additional alert to avoid spam)
+                print(f"Access denied for {name} (system already locked).")
+
+    def lock_system(self):
+        """Lock the current user session."""
+        self.locked = True
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            os.system("rundll32.exe user32.dll,LockWorkStation")  # Locks the workstation
+        elif system == "Linux":
+            os.system("xdg-screensaver lock")  # Example for Linux; adjust as needed
+        else:
+            print("Lock not supported on this OS.")
+        print("System locked.")
+
+    def permanent_lock(self):
+        """Handle permanent lock after max failed attempts."""
+        self.play_tts("System permanently locked. Contact administrator.")
+        self.send_email_alert("Multiple failed attempts - Permanent lock activated")
+        # Optional: Force logout or shutdown for extreme security
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            os.system("shutdown /l")  # Force logout
+        elif system == "Linux":
+            os.system("gnome-session-quit --power-off")  # Force shutdown; adjust as needed
+        self.running = False  # Stop the app
 
     def play_tts(self, text):
         """Play text-to-speech."""
@@ -250,7 +348,7 @@ class FaceRecognitionApp:
             msg['To'] = RECIPIENT_EMAIL
             msg['Subject'] = ALERT_SUBJECT
 
-            body = f"Unauthorized person detected: {name}. Timestamp: {datetime.now()}. Action: Logging out."
+            body = f"Unauthorized person detected: {name}. Timestamp: {datetime.now()}. Action: System locked."
             msg.attach(MIMEText(body, 'plain'))
 
             server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
@@ -262,81 +360,6 @@ class FaceRecognitionApp:
             print(f"Email alert sent for {name}")
         except Exception as e:
             print(f"Email error: {e}")
-
-    def logout_system(self):
-        """Log out the current user. This is OS-specific; example for Windows."""
-        import platform
-        system = platform.system()
-        if system == "Windows":
-            os.system("shutdown /l")  # Logs out current user
-        elif system == "Linux":
-            os.system("gnome-session-quit --logout")  # Example for GNOME; adjust as needed
-        else:
-            print("Logout not supported on this OS.")
-
-    def analyze_frames(self, frames):
-        """Analyze the frames to check for blinking, mouth movement, or head rotation."""
-        if len(frames) < 2:
-            return False  # Not enough frames to analyze
-
-        alive = False
-        blink_count = 0
-        motion_detected = False
-        previous_frame = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-        left_blinking = False
-        right_blinking = False
-        blink_frames = 0
-
-        for i in range(1, len(frames)):
-            current_frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
-
-            # Calculate the difference between the current frame and the previous frame
-            frame_diff = cv2.absdiff(previous_frame, current_frame)
-            _, thresh = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
-
-            # Count non-zero pixels (indicating motion)
-            non_zero_count = np.sum(thresh)
-            if non_zero_count > 10000:  # Threshold can be adjusted
-                motion_detected = True
-
-            previous_frame = current_frame  # Update previous frame for the next iteration
-
-            # Detect faces in the current frame
-            faces = detector(current_frame)
-
-            if faces:
-                shape = predictor(current_frame, faces[0])
-                landmarks = np.array([[p.x, p.y] for p in shape.parts()])
-
-                # Get the eye landmarks
-                left_eye = landmarks[36:42]  # Points 36-41 are the left eye
-                right_eye = landmarks[42:48]  # Points 42-47 are the right eye
-
-                # Calculate EAR for both eyes
-                left_ear = self.eye_aspect_ratio(left_eye)
-                right_ear = self.eye_aspect_ratio(right_eye)
-
-                if left_ear < 0.25:  # Threshold can be adjusted
-                    left_blinking = True
-                    blink_frames += 1  # Count frames where the left eye is detected as blinking
-
-                if right_ear < 0.25:  # Threshold can be adjusted
-                    right_blinking = True
-                    blink_frames += 1  # Count frames where the right eye is detected as blinking
-
-                if blink_frames >= 1:  # This could be adjusted
-                    blink_count += 1
-                    left_blinking = False  # Reset after counting
-                    right_blinking = False
-
-                if left_ear >= 0.25 and right_ear >= 0.25:
-                    blink_frames = 0
-
-        # Determine if the person is alive based on blink and motion detection
-        if blink_count > 0 and motion_detected:
-            alive = True
-
-        return alive
 
     def eye_aspect_ratio(self, eye):
         """Calculate the Eye Aspect Ratio (EAR) for an eye given its landmarks."""
@@ -351,6 +374,6 @@ if __name__ == "__main__":
     try:
         app.run()
     except KeyboardInterrupt:
-        app.close_app()
+        print("App stopped by user.")
     finally:
         camera.__del__()
